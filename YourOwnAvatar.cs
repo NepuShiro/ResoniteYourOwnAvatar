@@ -15,7 +15,7 @@ public class YourOwnAvatar : ResoniteMod
     public override string Name => "YourOwnAvatar";
     public override string Author => "NepuShiro";
     public override string Version => VERSION_CONSTANT;
-    public override string Link => "https://github.com/NepuShiro/ResoniteStopAutoAvatar/";
+    public override string Link => "https://github.com/NepuShiro/ResoniteYourOwnAvatar/";
 
     [AutoRegisterConfigKey] private static ModConfigurationKey<bool> ENABLED = new ModConfigurationKey<bool>("enabled", "Should YourOwnAvatar be Enabled?", () => true);
 
