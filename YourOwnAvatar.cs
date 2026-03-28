@@ -17,13 +17,15 @@ public class YourOwnAvatar : ResoniteMod
     public override string Version => VERSION_CONSTANT;
     public override string Link => "https://github.com/NepuShiro/ResoniteYourOwnAvatar/";
 
-    [AutoRegisterConfigKey] private static ModConfigurationKey<bool> ENABLED = new ModConfigurationKey<bool>("enabled", "Should YourOwnAvatar be Enabled?", () => true);
+    [AutoRegisterConfigKey] private static readonly ModConfigurationKey<bool> Enabled = new ModConfigurationKey<bool>("Enabled", "Should YourOwnAvatar be Enabled?", () => true);
+    [AutoRegisterConfigKey] private static readonly ModConfigurationKey<bool> Runin = new ModConfigurationKey<bool>("RunInWhar", "RunInUpdates or RunInSeconds?", () => true);
+    [AutoRegisterConfigKey] private static readonly ModConfigurationKey<int> UpdatesOrSeconds = new ModConfigurationKey<int>("UpdatesOrSeconds", "The amount of Updates or Seconds to wait before attempting to spawn the avatar", () => 15);
 
-    private static ModConfiguration config;
+    private static ModConfiguration _config;
 
     public override void OnEngineInit()
     {
-        config = GetConfiguration();
+        _config = GetConfiguration();
 
         Harmony harmony = new Harmony("net.NepuShiro.YourOwnAvatar");
         harmony.PatchAll();
@@ -35,7 +37,7 @@ public class YourOwnAvatar : ResoniteMod
         [HarmonyPrefix, HarmonyPatch(typeof(CommonAvatarBuilder), "SetupAvatarAccessKey")]
         private static bool SetupAvatarAccessKeyPrefix(ref Task __result)
         {
-            if (!config.GetValue(ENABLED)) return true;
+            if (!_config.GetValue(Enabled)) return true;
 
             // We completely skip this method, to never create a key, and to not set user.AvatarAccessKey
             __result = Task.CompletedTask;
@@ -45,7 +47,7 @@ public class YourOwnAvatar : ResoniteMod
         [HarmonyPostfix, HarmonyPatch(typeof(UserRoot), "OnStart")]
         public static void UserRootPostfix(UserRoot __instance)
         {
-            if (!config.GetValue(ENABLED)) return;
+            if (!_config.GetValue(Enabled)) return;
             // If we're not the active user of the userroot don't run.
             if (__instance.ActiveUser != __instance.World.LocalUser) return;
 
@@ -56,37 +58,51 @@ public class YourOwnAvatar : ResoniteMod
             // Check if the CommonAvatarBuilder Exists, and if You're allowed to load Cloud Avatars.
             CommonAvatarBuilder builder = world.RootSlot.GetComponentInChildren<CommonAvatarBuilder>();
             if (builder == null || !builder.LoadCloudAvatars) return;
-            
+
             // Maybe switch this between RunInUpdates/RunInSeconds to stop edge cases
-            __instance.Slot.RunInSeconds(3, () =>
+            if (_config.GetValue(Runin))
+                builder.RunInUpdates(_config.GetValue(UpdatesOrSeconds), DoThing);
+            else
+                builder.RunInSeconds(_config.GetValue(UpdatesOrSeconds), DoThing);
+            
+            return;
+
+            void DoThing()
             {
-                AvatarObjectSlot objSlot = __instance.Slot.GetComponent<AvatarObjectSlot>();
-                AvatarManager manager = __instance.Slot.GetComponent<AvatarManager>();
-
-                // Try to find if the Avatar we currently have equipped is one of the CustomAvatarTemplates
-                CommonAvatarBuilder.AvatarTemplate template = null;
-                if (builder.CustomAvatarTemplates.Count > 0 && objSlot.Equipped.Target is AvatarRoot comp)
+                builder.StartTask(async () =>
                 {
-                    // Maybe check if any of the templates block the cloud avatar for safety?
-                    template = builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Name == comp.Slot.Name) ?? builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Name == comp.Slot.GetObjectRoot().Name);
-                }
+                    AvatarObjectSlot objSlot = __instance.Slot.GetComponent<AvatarObjectSlot>();
+                    AvatarManager manager = __instance.Slot.GetComponent<AvatarManager>();
 
-                // if you're in a template avatar, check if it blocks the cloud avatar
-                // or if you're defaulted spectator. Don't load the cloud avatar
-                if (template != null && template.BlockCloudAvatar.Value || __instance.LocalUser.DefaultSpectator) return;
-
-                // This is basically a copy of what the host does to spawn the avatar - CommonAvatarBuilder.SpawnCloudAvatar() ~ L54
-                Uri favoriteAvatar = world.Engine.Cloud.Profile.GetCurrentFavorite(FavoriteEntity.Avatar);
-                if (favoriteAvatar != null)
-                {
-                    Slot avatar = __instance.World.AddSlot("Avatar");
-                    avatar.StartTask(async () =>
+                    // Try to find if the Avatar we currently have equipped is one of the CustomAvatarTemplates
+                    CommonAvatarBuilder.AvatarTemplate template = null;
+                    if (builder.CustomAvatarTemplates.Count > 0 && objSlot.Equipped.Target is AvatarRoot comp)
                     {
-                        bool cleanup = false;
+                        // Maybe check if any of the templates block the cloud avatar for safety?
+                        template = builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Name == comp.Slot.Name) ?? builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Name == comp.Slot.GetObjectRoot().Name);
+                    }
 
+                    // if you're in a template avatar, check if it blocks the cloud avatar
+                    // or if you're defaulted spectator. Don't load the cloud avatar
+                    if (template != null && template.BlockCloudAvatar.Value || __instance.LocalUser.DefaultSpectator) return;
+
+                    // This is basically a copy of what the host does to spawn the avatar - CommonAvatarBuilder.SpawnCloudAvatar() ~ L54
+                    Uri favoriteAvatar = world.Engine.Cloud.Profile.GetCurrentFavorite(FavoriteEntity.Avatar);
+                    if (favoriteAvatar != null)
+                    {
+                        await default(ToWorld);
+
+                        FrooxEngine.User user = __instance.LocalUser;
+                        while (!user.IsDestroyed && (user.Root == null || (user.Root.HeadSlot == null && user.Root.ReceivedFirstPositionalData) || user.Root.LocalHeadPosition.y <= 0.01f))
+                        {
+                            await default(NextUpdate);
+                        }
+                        if (user.IsDestroyed) return;
+
+                        Slot avatar = __instance.World.AddSlot("Avatar");
+                        bool cleanup = false;
                         try
                         {
-                            await default(ToWorld);
                             await avatar.LoadObjectAsync(favoriteAvatar);
                             avatar = avatar.GetComponent<InventoryItem>()?.Unpack(true) ?? avatar;
                             await default(NextUpdate);
@@ -105,9 +121,9 @@ public class YourOwnAvatar : ResoniteMod
                         {
                             avatar?.Destroy();
                         }
-                    });
-                }
-            });
+                    }
+                });
+            }
         }
     }
 }
