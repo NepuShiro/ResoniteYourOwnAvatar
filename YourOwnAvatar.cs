@@ -19,6 +19,7 @@ public class YourOwnAvatar : ResoniteMod
 
     [AutoRegisterConfigKey] private static readonly ModConfigurationKey<bool> Enabled = new ModConfigurationKey<bool>("Enabled", "Should YourOwnAvatar be Enabled?", () => true);
     [AutoRegisterConfigKey] private static readonly ModConfigurationKey<bool> Runin = new ModConfigurationKey<bool>("RunInWhar", "RunInUpdates or RunInSeconds?", () => true);
+    [AutoRegisterConfigKey] private static readonly ModConfigurationKey<bool> TemplateBlock = new ModConfigurationKey<bool>("TemplateBlock", "Block loading avatar if there's any Templates?", () => false);
     [AutoRegisterConfigKey] private static readonly ModConfigurationKey<int> UpdatesOrSeconds = new ModConfigurationKey<int>("UpdatesOrSeconds", "The amount of Updates or Seconds to wait before attempting to spawn the avatar", () => 15);
 
     private static ModConfiguration _config;
@@ -76,10 +77,15 @@ public class YourOwnAvatar : ResoniteMod
 
                     // Try to find if the Avatar we currently have equipped is one of the CustomAvatarTemplates
                     CommonAvatarBuilder.AvatarTemplate template = null;
+                    if (_config.GetValue(TemplateBlock))
+                    {
+                        if (builder.CustomAvatarTemplates.Count > 0) return;
+                    }
+
                     if (builder.CustomAvatarTemplates.Count > 0 && objSlot.Equipped.Target is AvatarRoot comp)
                     {
                         // Maybe check if any of the templates block the cloud avatar for safety?
-                        template = builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Name == comp.Slot.Name) ?? builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Name == comp.Slot.GetObjectRoot().Name);
+                        template = builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Target.Name == comp.Slot.Name) ?? builder.CustomAvatarTemplates.FirstOrDefault(x => x.TemplateRoot.Target.Name == comp.Slot.GetObjectRoot().Name);
                     }
 
                     // if you're in a template avatar, check if it blocks the cloud avatar
